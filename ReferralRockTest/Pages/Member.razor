@@ -1,0 +1,239 @@
+﻿@page "/member/{id}"
+
+@inject IHttpClientFactory _clientFactory
+
+
+@if (string.IsNullOrWhiteSpace(errorString) == false)
+{
+    <div class="h2">@errorString</div>
+}
+else if (referrals is null)
+{
+    <div class="h4">Loading, Please Wait...</div>
+}
+else
+{
+    <h1>@member's Referrals</h1>
+    <table class="table table-striped">
+        <thead class="thead-dark">
+            <tr>
+                <th scope="col">Name</th>
+                <th></th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var e in referrals.Referrals)
+            {
+                <tr>
+                    @if (updating && updatingId == e.Id)
+                    {
+                        <td scope="row">
+                            <div class="row">
+                                <label class="form-label col">
+                                    First Name
+                                    <input id="firstNameUpdate" @bind="updatingReferral.firstName" />
+                                </label>
+                                <label class="form-label col">
+                                    Last Name
+                                    <input id="lastNameUpdate" @bind="updatingReferral.lastName" />
+                                </label>
+                                <label class="form-label col">
+                                    Email
+                                    <input id="emailUpdate" @bind="updatingReferral.email" />
+                                </label>
+                            </div>
+                        </td>
+                        <td><button class="btn btn-primary btn-sm" @onclick="UpdateReferral">Finish</button></td>
+                        <td><button class="btn btn-danger btn-sm" disabled="@(updating && updatingId != e.Id)" @onclick="CancelUpdating">Cancel</button></td>
+                    }
+                    else
+                    {
+                        <td scope="row">@e.DisplayName</td>
+                        <td><button class="btn btn-primary btn-sm" disabled="@(updating && updatingId != e.Id)" @onclick="() => StartUpdating(e)">Update</button></td>
+                        <td><button class="btn btn-danger btn-sm" @onclick="@(async () => await Delete(e.Id))" disabled="@updating">Delete</button></td>
+                    }
+                </tr>
+            }
+        </tbody>
+    </table>
+
+    <h4>New Referral</h4>
+    <EditForm Model="@newReferral" OnValidSubmit="@SubmitNewReferral">
+        <DataAnnotationsValidator />
+        <ValidationSummary />
+        <div class="row">
+            <label class="form-label col">
+                Referral Code
+                <InputText id="referralCode" @bind-Value="newReferral.referralCode" class="form-control" />
+            </label>
+            <label class="form-label col">
+                Email
+                <InputText id="email" @bind-Value="newReferral.email" class="form-control" />
+            </label>
+            <label class="form-label col">
+                First Name
+                <InputText id="firstName" @bind-Value="newReferral.firstName" class="form-control" />
+            </label>
+            <label class="form-label col">
+                Last Name
+                <InputText id="lastName" @bind-Value="newReferral.lastName" class="form-control" />
+            </label>
+        </div>
+        <div class="row">
+            <button type="submit" class="btn btn-primary ml-3">Submit New Referral</button>
+        </div>
+    </EditForm>
+}
+
+
+@code {
+    [Parameter]
+    public string id { get; set; }
+
+    HttpClient client;
+    ReferralsModel referrals;
+    string errorString;
+    string updatingId;
+
+    string member = "Member";
+    string referranceModalStyle = "";
+    NewReferralModal newReferral = new NewReferralModal();
+    UpdateReferralModel updatingReferral = new UpdateReferralModel();
+    bool updating = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        client = _clientFactory.CreateClient("ReferralRock");
+
+        await UpdatePage();
+    }
+
+    async Task UpdatePage()
+    {
+        try
+        {
+            referrals = await client.GetFromJsonAsync<ReferralsModel>($"referrals?memberId={id}");
+            if (referrals.Referrals.Count() > 0)
+            {
+                member = referrals.Referrals.FirstOrDefault().ReferringMemberName;
+                newReferral.referralCode = referrals.Referrals.FirstOrDefault().MemberReferralCode;
+            }
+            errorString = null;
+        }
+        catch (Exception ex)
+        {
+            errorString = $"Error in GETing members: { ex.Message }";
+        }
+    }
+
+    async Task SubmitNewReferral()
+    {
+        errorString = $"Submitting";
+        try
+        {
+            HttpContent content = new StringContent(JsonSerializer.Serialize(newReferral), Encoding.UTF8, "application/json");
+            HttpResponseMessage response = await client.PostAsync("referrals", content);
+            errorString = null;
+
+            await UpdatePage();
+
+            newReferral = new NewReferralModal();
+            newReferral.referralCode = referrals.Referrals.FirstOrDefault().MemberReferralCode;
+        }
+        catch (Exception ex)
+        {
+            errorString = $"Error in POSTing new referral: { ex.Message }";
+        }
+    }
+
+    void StartUpdating(ReferralModel r)
+    {
+        updatingReferral = new UpdateReferralModel
+        {
+            firstName = r.FirstName,
+            lastName = r.LastName,
+            email = r.Email
+        };
+
+        updating = true;
+        updatingId = r.Id;
+    }
+
+    void CancelUpdating()
+    {
+        updating = false;
+        updatingId = null;
+    }
+
+    async Task UpdateReferral()
+    {
+        try
+        {
+            UpdateReferralContainerModel[] query = new UpdateReferralContainerModel[] { new UpdateReferralContainerModel
+            {
+                query = new Query
+                {
+                    primaryInfo = new Primaryinfo
+                    {
+                        referralId = updatingId
+                    }
+                },
+                Referral = updatingReferral
+            }};
+
+            HttpRequestMessage request = new HttpRequestMessage
+            {
+                Method = HttpMethod.Post,
+                RequestUri = new Uri("https://api.referralrock.com/api/referral/update"),
+                Content = new StringContent(JsonSerializer.Serialize(query), Encoding.UTF8, "application/json")
+            };
+
+            var response = await client.SendAsync(request);
+
+            errorString = null;
+            CancelUpdating();
+
+            await UpdatePage();
+        }
+        catch (Exception ex)
+        {
+            errorString = $"An error occured in Update: {ex.Message}";
+        }
+    }
+
+    async Task Delete(string referralId)
+    {
+
+        try
+        {
+            ReferralQueryModel[] query = new ReferralQueryModel[] { new ReferralQueryModel
+            {
+                query = new Query
+                {
+                    primaryInfo = new Primaryinfo
+                    {
+                        referralId = referralId
+                    }
+                }
+            }};
+
+            HttpRequestMessage request = new HttpRequestMessage
+            {
+                Method = HttpMethod.Delete,
+                RequestUri = new Uri("https://api.referralrock.com/api/referral/remove"),
+                Content = new StringContent(JsonSerializer.Serialize(query), Encoding.UTF8, "application/json")
+            };
+
+            var response = await client.SendAsync(request);
+
+            errorString = null;
+
+            await UpdatePage();
+        }
+        catch (Exception ex)
+        {
+            errorString = $"An error occured in Delete: {ex.Message}";
+        }
+    }
+}

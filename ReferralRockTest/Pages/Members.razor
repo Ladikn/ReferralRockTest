@@ -1,0 +1,62 @@
+﻿@page "/members"
+
+@inject IHttpClientFactory _clientFactory
+
+<h3>Members</h3>
+
+@if (string.IsNullOrWhiteSpace(errorString) == false)
+{
+    <div class="h2">@errorString</div>
+}
+else if (members is null)
+{
+    <div class="h4">Loading, Please Wait...</div>
+}
+else
+{
+    <table class="table table-striped">
+        <thead class="thead-dark">
+            <tr>
+                <th>Name</th>
+                <th>Referrals</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var e in members.Members)
+            {
+            <tr>
+                <td>@e.DisplayName</td>
+                <td>@e.Referrals</td>
+                <td>
+                    <a class="btn btn-primary btn-sm" href="member/@e.Id">
+                        @e.FirstName's Referrals
+                    </a>
+                </td>
+            </tr>
+            }
+        </tbody>
+    </table>
+}
+
+
+@code {
+
+    MembersModel members;
+    string errorString;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var client = _clientFactory.CreateClient("ReferralRock");
+
+        try
+        {
+            members = await client.GetFromJsonAsync<MembersModel>("members");
+            errorString = null;
+        }
+        catch (Exception ex)
+        {
+            errorString = $"Error in GETing members: { ex.Message }";
+        }
+    }
+}
